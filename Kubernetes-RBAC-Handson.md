@@ -192,7 +192,7 @@ rules:
   resources: ["pods","services","configmaps","persistentvolumeclaims"]
   verbs: ["get","list","watch"]
 - apiGroups: ["apps"]
-  resources: ["deployments","replicasets"]
+  resources: ["deployments","replicasets", "pods"]
   verbs: ["get","list","watch"]
 ---
 kind: RoleBinding
@@ -274,7 +274,7 @@ roleRef:
 
 ```bash
 kubectl apply -f dev-admin-role.yaml
-kubectl config use-context dev-user-context
+kubectl config use-context admin-user-context
 kubectl create deploy test1 -n dev --image=nginx --replicas=2
 #deployment.apps/test1 created
 kubectl config use-context kubernetes-admin@kubernetes
