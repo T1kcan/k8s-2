@@ -169,10 +169,12 @@ kubectl config set-context dev-user-context \
   --namespace=dev
 ```
 ---
+```bash
 kubectl config get-contexts	#List all available contexts
 kubectl config use-context <context-name>	#Switch to a different context
 kubectl config view --minify	#View details of the current context only (including cluster, user, namespace)
 kubectl config view	#Show the full kubeconfig file content
+```
 ---
 
 ### 4. Define Roles & Bindings
@@ -221,8 +223,28 @@ kubectl create deploy test -n dev --image=nginx --replicas=2
 #deployment.apps/test created
 kubectl delete -f dev-reader-role.yaml
 ```
+### 4.1. Admin User
+### 4.2. Generate Certificate – `admin-user`
 
-#### 4.2 `dev-admin` (Full Access)
+```bash
+openssl genrsa -out ca.key 2048
+openssl req -x509 -new -nodes -key ca.key -subj "/CN=kube-ca" -days 10000 -out ca.crt
+openssl genrsa -out admin-user.key 2048
+openssl req -new -key admin-user.key -subj "/CN=admin-user/O=developers" -out admin-user.csr
+openssl x509 -req -in admin-user.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out admin-user.crt -days 500
+```
+---
+
+### 4.3. Configure Kubeconfig for `admin-user`
+
+```bash
+CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
+CLUSTER_SERVER=$(kubectl config view -o jsonpath="{.clusters[?(@.name==\"${CLUSTER_NAME}\")].cluster.server}")
+kubectl config set-credentials admin-user   --client-certificate=admin-user.crt   --client-key=admin-user.key   --embed-certs=true
+kubectl config set-context admin-user-context   --cluster="$CLUSTER_NAME"   --user=admin-user   --namespace=dev
+```
+
+#### 4.4 `dev-admin` (Full Access)
 - dev-admin-role.yaml
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
