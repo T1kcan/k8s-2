@@ -1,0 +1,5 @@
+```bash
+mkdir alloy-tutorial
+cd alloy-tutorial
+touch docker-compose.yml
+```
