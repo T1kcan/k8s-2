@@ -119,7 +119,7 @@ export CONTAINER_PORT=$(kubectl get pod --namespace kube-system $POD_NAME -o jso
 
 kubectl --namespace kube-system port-forward $POD_NAME 8080:$CONTAINER_PORT
 ```
-and connect https://833e91dce313-10-244-8-225-8080.spch.r.killercoda.com
+and connect http://localhost:8080
 
 Check metrics-server
 let check it's installed, since it's installed in the kube-system namespace, we have to add the --namespace argument
