@@ -17,7 +17,7 @@ This document guides you through installing Kyverno on Kubernetes and practicing
 Install Kyverno using the official manifest:
 
 ```bash
-kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.13.0/install.yaml
+kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.14.0/install.yaml
 ```
 
 Verify Kyverno pods are running:

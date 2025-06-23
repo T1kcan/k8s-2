@@ -126,11 +126,11 @@ let check it's installed, since it's installed in the kube-system namespace, we 
 ```bash
 helm list -A
 
-helm get notes my-metrics-server
+helm get notes my-metrics-server -n kube-system
 ```
 and lets check what values have been used:
 ```bash
-helm get values my-metrics-server
+helm get values my-metrics-server -n kube-system
 ```
 To get a pervious release, you can use --revision <release number>
 
@@ -205,9 +205,9 @@ and test it:
 curl localhost:8080
 ```
 to remove
-
+```bash
 helm uninstall new-chart
-
+```
 ## GENERATE FROM SCRATCH
 Bare Template
 ```bash
