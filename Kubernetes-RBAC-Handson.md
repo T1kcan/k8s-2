@@ -311,10 +311,9 @@ curl -k https://172.30.1.2:6443/apis
 
 ```bash
 rm ca.*, dev-user.*, admin-user.*
-kubectl config unset users.dev-user contexts.dev-user-context users.admin-user contexts.admin-user-context
-
+kubectl config delete-context dev-user-context
+kubectl config delete-context admin-user-context
 kubectl delete -f dev-reader-role.yaml
 kubectl delete -f dev-admin-role.yaml
-
 kubectl delete namespace dev
 ```
