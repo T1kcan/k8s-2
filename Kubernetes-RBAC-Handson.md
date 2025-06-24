@@ -189,7 +189,7 @@ spec:
 EOF
 ```
 
-The output of the command k get csr should result in the following:
+The output of the command kubectl get csr should result in the following:
 
 ```bash
 kubectl get csr
@@ -233,9 +233,9 @@ The output of kubectl config view will now show dev-user as one of the users
 
 Next, we'll set and use the context in which kubectl uses to access the Kubernetes API
 ```bash
-kubectl config set-context dev-user --user=dev-user-context --cluster=kubernetes
+kubectl config set-context dev-user --user=dev-user --cluster=kubernetes
 
-kubectl config use-context dev-user-context
+kubectl config use-context dev-user
 ```
 
 ## 3. Define Roles & Bindings
@@ -289,7 +289,7 @@ kubectl config view	#Show the full kubeconfig file content
 Finally, we can test if our dev-user user can get pods in the dev namespace
 
 ```bash
-kubectl config use-context dev-user-context
+kubectl config use-context dev-user
 kubectl create deploy test -n dev --image=nginx --replicas=2
 #error: failed to create deployment: deployments.apps is forbidden: User "dev-user" cannot create resource "deployments" in API group "apps" in the namespace "dev"
 ```
@@ -365,7 +365,7 @@ kubectl config set-credentials admin-user --client-key=admin-user.key --client-c
 - set and use the context in which kubectl uses to access the Kubernetes API
 
 ```bash
-kubectl config set-context admin-user --user=admin-user-context --cluster=kubernetes
+kubectl config set-context admin-user --user=admin-user --cluster=kubernetes
 kubectl config get-contexts
 kubectl config use-context admin-user
 ```
@@ -402,7 +402,7 @@ roleRef:
 ```bash
 kubectl config use-context kubernetes-admin@kubernetes
 kubectl apply -f dev-admin-role.yaml
-kubectl config use-context admin-user-context
+kubectl config use-context admin-user
 kubectl create deploy test1 -n dev --image=nginx --replicas=2
 #deployment.apps/test1 created
 kubectl config use-context kubernetes-admin@kubernetes
@@ -439,8 +439,8 @@ curl -k https://172.30.1.2:6443/apis
 
 ```bash
 rm ca.*, dev-user.*, admin-user.*
-kubectl config delete-context dev-user-context
-kubectl config delete-context admin-user-context
+kubectl config delete-context dev-user
+kubectl config delete-context admin-user
 kubectl delete -f dev-reader-role.yaml
 kubectl delete -f dev-admin-role.yaml
 kubectl delete namespace dev
