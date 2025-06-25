@@ -1,18 +1,44 @@
+## Introduction
+Argo CD (Continuous Delivery) is a declarative, GitOps continuous delivery tool for Kubernetes. It follows GitOps principles where the desired state of Kubernetes resources is stored in Git and Argo CD continuously ensures the actual state matches the desired state.
 
----
-#ArgoCD HandsOn Lab
+## Prerequisites
+- Kubernetes cluster (Minikube, Kind, or real cluster)
+- kubectl configured to access the cluster
+- Helm (optional but recommended)
+- GitHub account (or any Git server)
 
-## Installation
+## Step 1: Install Argo CD
 
-01. Setting-Up Argo CD
-
-Install Argo CD using Non-HA manifests in argocd namespace.
-After installing Argo CD, make sure that pods are running and ready.
-
+### 1.1 Create `argocd` namespace and apply official manifest
+01. Installing Argo CD 
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd wait deploy --all --for condition=Available --timeout 2m
+kubectl get pods -n argocd
+kubectl get secret argocd-initial-admin-secret -n argocd \
+  -o jsonpath="{.data.password}" | base64 -d && echo
+# -d1TcgILt62Hk6Z5
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+02. Installing Argo CD CLI
+Install Argo CD CLI, use the below commands to start with the installation
+```bash
+curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/download/v2.4.8/argocd-linux-amd64
+chmod +x /usr/local/bin/argocd
+```
+Verify that CLI is installed
+```bash
+argocd
+```
+03. Through Personal Manifests:
 ```bash
 kubectl create ns argocd
-wget https://raw.githubusercontent.com/T1kcan/argocd-example-apps/refs/heads/master/install_argocd.yaml
-kubectl apply -f install_argocd.yaml
+git clone https://github.com/T1kcan/argocd-example-apps.git
+cd argocd-example-apps
+kubectl apply -f install.yaml -n argocd
+kubectl -n argocd wait deploy --all --for condition=Available --timeout 2m
+kubectl get pods -n argocd
 ```
 Wait until the pods are running and ready
 Initial admin password is stored as a secret in argocd namespace:
@@ -20,7 +46,60 @@ Initial admin password is stored as a secret in argocd namespace:
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
 # OkYifesK7KdIMGAM
 ```
-02. Access Web UI
+
+### 1.2 Install Argo CD using Helm
+```bash
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+helm install argocd argo/argo-cd \
+  --namespace argocd \
+  --set server.service.type=NodePort
+
+  
+NAME: argocd
+LAST DEPLOYED: Wed Jun 25 19:59:57 2025
+NAMESPACE: argocd
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+In order to access the server UI you have the following options:
+
+1. kubectl port-forward service/argocd-server -n argocd 8080:443
+
+    and then open the browser on http://localhost:8080 and accept the certificate
+
+2. enable ingress in the values file `server.ingress.enabled` and either
+      - Add the annotation for ssl passthrough: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#option-1-ssl-passthrough
+      - Set the `configs.params."server.insecure"` in the values file and terminate SSL at your ingress: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#option-2-multiple-ingress-objects-and-hosts
+
+
+After reaching the UI the first time you can login with username: admin and the random password generated during the installation. You can find the password by running:
+
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+
+(You should delete the initial secret afterwards as suggested by the Getting Started Guide: https://argo-cd.readthedocs.io/en/stable/getting_started/#4-login-using-the-cli)
+```
+
+### 1.3 Verify Pods
+<!-- The Workflow Controller is responsible for running workflows:
+```bash
+kubectl -n argocd get deploy workflow-controller
+``` -->
+And the Argo Server provides a user interface and API:
+```bash
+kubectl -n argocd get deploy argo-server
+```
+All pods should be in `Running` state.
+```bash
+kubectl -n argocd wait deploy --all --for condition=Available --timeout 2m
+kubectl get pods -n argocd
+```
+---
+
+### 1.4 Access Web UI
+
+01. Access Web UI
 
 In this environment we exposed Argo CD server externally using node port.
 ```bash
@@ -52,8 +131,9 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 #wWsgk6eSY4XDYzai
 ```
 - Login to Argo CD using CLI, use argocd login command.
-
-example: argocd login argocdHost --grpc-web .
+```bash
+example: argocd login argocdHost --grpc-web 
+```
 ```bash
 controlplane:~$ kubectl get nodes -o wide
 NAME           STATUS   ROLES           AGE    VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION     CONTAINER-RUNTIME
@@ -68,62 +148,38 @@ Since Argo CD server service is exposed using node port 32073, you can use the i
 Execute this command to login to Argo CD:
 ```bash
 argocd login 172.30.1.2:32073 --grpc-web --plaintext
+#
+Username: admin           
+Password: 
+'admin:login' logged in successfully
+Context '172.30.1.2:32073' updated
+
 ```
 Enter admin as user and enter the password that you got previously.
 
 After successful login you can start using other commands such as listing apps or clusters.
 ```bash
 argocd cluster list --grpc-web
-
 ```
+----------
 
-##  Creating Argo CD Application Declaratively
-
-01. Create Argo CD Application
-
-Create an Argo CD application declaratively using below Yaml format with specs and apply it using kubectl:
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata: 
-  name: 
-  namespace: argocd
-spec: 
-  destination: 
-    namespace: 
-    server: ""
-  project: default
-  source: 
-    path: 
-    repoURL: ""
-    targetRevision: 
-  syncPolicy:
-    syncOptions:
-      - CreateNamespace=true
-```
-We are going to deploy a sample guestbook application: 
-- Name: guestbook
-- Destination cluster url (local cluster): https://kubernetes.default.svc
-- Destination namespace: guestbook
-- Source repo: https://github.com/T1kcan/argocd-example-apps.git , or you can fork the repo and set your repo url.
-- Source path: guestbook , (path of manifests where it include k8s service and deployment files).
-- Source branch: master
-
-Create an Argo CD application declaratively using Yaml with below specs and apply it using kubectl:
+## Create applications
+### Create ArgoCD Application Declaratively
+- Check the application definition and create an Argo CD application declaratively using below Yaml format with specs and apply it using kubectl:
 
 - application.yaml
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: guestbook
+metadata: 
+  name: guestbook-app
   namespace: argocd
-spec:
-  destination:
+spec: 
+  destination: 
     namespace: guestbook
     server: "https://kubernetes.default.svc"
   project: default
-  source:
+  source: 
     path: guestbook
     repoURL: "https://github.com/T1kcan/argocd-example-apps.git"
     targetRevision: master
@@ -131,27 +187,26 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ```
-Create the application using kubectl:
+Create the application:
 ```bash
 kubectl apply -f application.yaml
 ```
-Verify application is created:
+Verify application is created
 ```bash
-controlplane:~$ kubectl get application -n argocd -w
+kubectl get application -n argocd
 NAME        SYNC STATUS   HEALTH STATUS
 guestbook   OutOfSync     Missing
 ```
-03. Sync Application
-You need admin user password to login in web:
+Sync Applications
+<!-- If needed again admin user password to login in web.
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
-# ThIrhmlKK2tvNhQf
-```
-Sync the application to create the resources in destination cluster.
+``` -->
+Open web UI and Access ArgoCD
 
+Sync the applications to create the resources in destination cluster.
 
 ## Creating Argo CD Application using Web UI
-
 
 Create an Argo CD application using Web UI by clicking (New App), use below specs:
 
@@ -170,19 +225,16 @@ kubectl get all -n app-1
 
 - Sync the application to create the resources in destination cluster.
 
-
-
-
-
-## Creating Argo CD Application using CLI
+### Using CLI
+<!-- Run the argocd command to login:
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/argoproj/argocd-example-apps/master/manifests/guestbook.yaml -n argocd
-```
-
-Or use `argocd` CLI (after installing):
+HOST="localhost:443"
+PASSWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo)
+argocd login ${HOST} --username admin --password ${PASSWD} --grpc-web
+``` -->
+Create the application
 ```bash
-argocd login 172.30.1.2:32073 --grpc-web --plaintext
-argocd app create app-2 \
+argocd app create gbook-app \
   --repo https://github.com/T1kcan/argocd-example-apps.git \
   --revision master \
   --path guestbook \
@@ -190,17 +242,114 @@ argocd app create app-2 \
   --dest-namespace app-2 \
   --sync-option CreateNamespace=true \
   --grpc-web
-#application 'app-2' created
-argocd app list --grpc-web
-argocd app sync app-2 --grpc-web
+```
+Verify app is created
+```bash
 argocd app list --grpc-web
 ```
+Sync the application:
+```bash
+argocd app sync gbook-app --grpc-web
+```
+Verify app is synced
+```bash
+argocd app list --grpc-web
 
+```
+## Check reconciliation
+### Now do GitOps
 
+Replica Count Update
+- Update one of the applications and click on the APP DETAILS,SYNC POLICY, ENABLE AUTO-SYNC , PRUNE RESOURCES and SELF HEAL buttons.
 
+- Update the replica count on the guestbook-ui-deployment , e.g.
+
+# github.com/T1kcan/argocd-example-apps/blob/master/guestbook/guestbook-ui-deployment.yaml
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook-ui
+spec:
+  replicas: 1  # change this to 3
+  revisionHistoryLimit: 3
+```
+...
+Git commit and push
+
+Watch the changes on the UI
+
+Check the other application: It should be "Out of Sync"
+
+Try it manually via kubectl
+
+Update 1 of the applications and click on the ENABLE AUTO-SYNC , PRUNE RESOURCES and SELF HEAL buttons.
+
+Patch the deployment manually on the app-2 namespace:
+```bash
+kubectl patch deployment guestbook-ui \
+  -n app-2 -p '{"spec":{"replicas":5}}'
+```
+
+## Kustomize & Helm
+
+### Kustomize and Helm
+
+#### Kustomize
+Investigate another application that uses kustomize:
+
+- kapplication.yaml
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: 
+  name: kdemo
+  namespace: argocd
+spec: 
+  destination: 
+    namespace: kustomize
+    server: "https://kubernetes.default.svc"
+  project: default
+  source: 
+    path: kustomize-guestbook
+    repoURL: "https://github.com/T1kcan/argocd-example-apps.git"
+    targetRevision: master
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+Create the application:
+```bash
+kubectl apply -f kapplication.yaml
+```
+Change the image tag on kustomization.yaml , commit and push:
+
+# github.com/T1kcan/argocd-example-apps/blob/master/kustomize-guestbook/kustomization.yaml
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namePrefix: kustomize-
+
+images:
+- name: gcr.io/heptio-images/ks-guestbook-demo
+  newTag: "0.1"   # change this to "0.2"
+
+resources:
+- guestbook-ui-deployment.yaml
+- guestbook-ui-svc.yaml
+```
+
+#### Helm
+ArgoCD supports deploying Helm charts, however it does not deploy it as a Helm release. It runs helm template first and then deploys the manifest If you want to have helm releases deployed, then you should you flux.
 
 ## Helm Options
-Practice creating application that deploy a helm chart that exist in a git repo , in this practice we will cover:
+Practice creating application that deploy a helm chart that exist in a git repo, in this practice we will cover:
 
 Declare an Argo CD application declaratively that deploy a helm chart.
 Create the application using kubectl.
@@ -208,6 +357,7 @@ Sync the application and verify resources are created in cluster.
 Update the helm release name in Argo CD application definition.
 Re-sync the app and prune the old resources.
 
+- helm-application.yaml
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -230,7 +380,7 @@ spec:
 
 Create the application using kubectl
 ```bash
-kubectl apply -f /practice/application.yaml
+kubectl apply -f helm-application.yaml
 ```
 Verify application is created
 ```bash
@@ -253,7 +403,7 @@ spec:
   project: default
   source: 
     path: helm-guestbook
-    repoURL: "https://github.com/mabusaa/argocd-example-apps.git"
+    repoURL: "https://github.com/T1kcan/argocd-example-apps.git"
     targetRevision: master
     helm:
      releaseName: my-release
@@ -385,43 +535,11 @@ stringData:
     }
 ```
 ```bash
-
-
-
-
-
 Name: remote-cluster
 Server: set the remote cluster public API Url
 bearerToken: set the bearerToken
 caData: set certificate authority data
-
-
-
-### 3.1 Clone the sample app repo
-```bash
-git clone https://github.com/argoproj/argocd-example-apps.git
-cd argocd-example-apps
 ```
-
-
-argocd app create guestbook \
-    --repo https://github.com/argoproj/argocd-example-apps.git \
-    --path guestbook \
-    --dest-server https://kubernetes.default.svc \
-    --dest-namespace default
-```
-
-
-### 3.3 Sync the App
-```bash
-argocd app sync guestbook
-```
-
-### 3.4 Verify
-```bash
-kubectl get pods -n default
-```
-
 ## Step 4: Application Lifecycle Operations
 
 ### 4.1 Refresh Application
@@ -440,19 +558,6 @@ argocd app rollback guestbook <revision>
 argocd app delete guestbook --cascade
 ```
 
-## Step 5: Argo CD CLI Installation (Optional)
-
-On Linux/macOS:
-```bash
-brew install argocd
-```
-Or manually:
-```bash
-curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-chmod +x argocd
-sudo mv argocd /usr/local/bin/
-```
-
 ## Cleanup
 ```bash
 kubectl delete namespace argocd
@@ -469,62 +574,3 @@ You have successfully:
 ## References
 - [Argo CD Official Docs](https://argo-cd.readthedocs.io/en/stable/)
 - [Argo CD GitHub Repo](https://github.com/argoproj/argo-cd)
-
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: myapp-argo-application
-  namespace: argocd
-spec:
-  project: default
-
-  source:
-    repoURL: https://github.com/T1kcan/argocd-example-apps
-    targetRevision: HEAD
-    path: guestbook
-  destination: 
-    server: https://kubernetes.default.svc
-    namespace: test
-
-  syncPolicy:
-    syncOptions:
-    - CreateNamespace=true
-
-    automated:
-      selfHeal: true
-      prune: true
-```
-
-```bash
-git clone -b scenarios https://github.com/T1kcan/argocd-course-apps-definitions.git
-cd argocd-course-apps-definitions/argocd-install/overlays/production/
-kubectl apply -k . -n argocd
-
-
-curl -s https://raw.githubusercontent.com/argoproj-labs/training-material/main/argo-workflows/install.sh | sh
-```
-template example:
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Workflow
-metadata:
-  generateName: container-
-spec:
-  entrypoint: main
-  templates:
-  - name: main
-    container:
-      image: busybox
-      command: [echo]
-      args: ["hello world"]
-```
-
-```bash
-argo submit --serviceaccount argo-workflow --watch container-workflow.yaml
-```
-Port-forward to the Argo Server pod...
-```bash
-kubectl -n argo port-forward --address 0.0.0.0 svc/argo-server 2746:2746 > /dev/null &
-```
