@@ -154,7 +154,7 @@ Since Argo CD server service is exposed using node port 32073, you can use the i
 
 Execute this command to login to Argo CD:
 ```bash
-argocd login 172.30.1.2:32073 --grpc-web --plaintext
+argocd login 172.30.1.2:32073 --grpc-web
 #
 Username: admin           
 Password: 
