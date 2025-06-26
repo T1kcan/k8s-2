@@ -157,8 +157,9 @@ Error: INSTALLATION FAILED: repo jenkinsci not found
 controlplane:~$ helm install jenkins -n jenkins -f jenkins-values.yaml jenkins/jenkins
 Error: INSTALLATION FAILED: open jenkins-values.yaml: no such file or directory
 controlplane:~$ helm install jenkins -n jenkins -f values.yaml jenkins/jenkins
+Release "jenkins" does not exist. Installing it now.
 NAME: jenkins
-LAST DEPLOYED: Thu Jun 12 14:49:05 2025
+LAST DEPLOYED: Wed Jun 25 21:21:00 2025
 NAMESPACE: jenkins
 STATUS: deployed
 REVISION: 1
@@ -182,6 +183,7 @@ https://jenkins.io/projects/jcasc/
 
 
 NOTE: Consider using a custom image with pre-installed plugins
+#NBcbp96kvHkCOV11D6vmVn
 ```
 
 #helm install jenkins -n jenkins -f values.yaml jenkins/jenkins
@@ -196,6 +198,39 @@ export NODE_IP=$(kubectl get nodes --namespace jenkins -o jsonpath="{.items[0].s
 echo http://$NODE_IP:$NODE_PORT
 ```
 
+
+
+### Run Jenkins on Docker:
+
+```bash
+docker run -d \
+  --name jenkins \
+  -p 8080:8080 -p 50000:50000 \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts
+```
+Get the admin password
+```
+docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+- docker-compose.yaml
+```yaml
+version: '3'
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+
+volumes:
+  jenkins_home:
+```
+```bash
+docker compose up -d
+```
 ## 2. Sample App Repository Structure
 
 ```
@@ -211,9 +246,163 @@ my-app/
         └── deployment.yaml
 ```
 
+```groovy
+pipeline {
+    agent any
 
+    environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-id') // Set in Jenkins > Credentials
+        IMAGE_NAME = 'yourdockerhubusername/yourapp'
+    }
 
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/your-org/your-repo.git'
+            }
+        }
 
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${IMAGE_NAME}:latest")
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-id') {
+                        docker.image("${IMAGE_NAME}:latest").push()
+                    }
+                }
+            }
+        }
+    }
+}
+
+```
+
+```groovy
+pipeline {
+    agent any
+    tools {
+        terraform 'terraform'
+}
+    environment {
+        PATH=sh(script:"echo $PATH:/usr/local/bin", returnStdout:true).trim()
+        AWS_REGION = "us-east-1"
+        AWS_ACCOUNT_ID=sh(script:'export PATH="$PATH:/usr/local/bin" && aws sts get-caller-identity --query Account --output text', returnStdout:true).trim()
+        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        APP_REPO_NAME = "clarusway-repo/cw-todo-app"
+        APP_NAME = "todo"
+        HOME_FOLDER = "/home/ec2-user"
+        GIT_FOLDER = sh(script:'echo ${GIT_URL} | sed "s/.*\\///;s/.git$//"', returnStdout:true).trim()
+    }
+        stages {
+
+        stage('Create Infrastructure for the App') {
+            steps {
+                echo 'Creating Infrastructure for the App on AWS Cloud'
+                sh 'terraform init'
+                sh 'terraform apply --auto-approve'
+            }
+        }
+        stage('Create ECR Repo') {
+            steps {
+                echo 'Creating ECR Repo for App'
+                sh """
+                aws ecr create-repository \
+                  --repository-name ${APP_REPO_NAME} \
+                  --image-scanning-configuration scanOnPush=false \
+                  --image-tag-mutability MUTABLE \
+                  --region ${AWS_REGION}
+                """
+            }
+        }
+        stage('Build App Docker Image') {
+            steps {
+                echo 'Building App Image'
+                script {
+                    env.NODE_IP = sh(script: 'terraform output -raw node_public_ip', returnStdout:true).trim()
+                    env.DB_HOST = sh(script: 'terraform output -raw postgre_private_ip', returnStdout:true).trim()
+                }
+                sh 'echo ${DB_HOST}'
+                sh 'echo ${NODE_IP}'
+                sh 'envsubst < node-env-template > ./nodejs/server/.env'
+                sh 'cat ./nodejs/server/.env'
+                sh 'envsubst < react-env-template > ./react/client/.env'
+                sh 'cat ./react/client/.env'
+                sh 'docker build --force-rm -t "$ECR_REGISTRY/$APP_REPO_NAME:postgre" -f ./postgresql/dockerfile-postgresql .'
+                sh 'docker build --force-rm -t "$ECR_REGISTRY/$APP_REPO_NAME:nodejs" -f ./nodejs/dockerfile-nodejs .'
+                sh 'docker build --force-rm -t "$ECR_REGISTRY/$APP_REPO_NAME:react" -f ./react/dockerfile-react .'
+                sh 'docker image ls'
+            }
+        }
+        stage('Push Image to ECR Repo') {
+            steps {
+                echo 'Pushing App Image to ECR Repo'
+                sh 'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin "$ECR_REGISTRY"'
+                sh 'docker push "$ECR_REGISTRY/$APP_REPO_NAME:postgre"'
+                sh 'docker push "$ECR_REGISTRY/$APP_REPO_NAME:nodejs"'
+                sh 'docker push "$ECR_REGISTRY/$APP_REPO_NAME:react"'
+            }
+        }
+        stage('wait the instance') {
+            steps {
+                script {
+                    echo 'Waiting for the instance'
+                    id = sh(script: 'aws ec2 describe-instances --filters Name=tag-value,Values=ansible_postgresql Name=instance-state-name,Values=running --query Reservations[*].Instances[*].[InstanceId] --output text',  returnStdout:true).trim()
+                    sh 'aws ec2 wait instance-status-ok --instance-ids $id'
+                }
+            }
+        }
+        stage('Deploy the App') {
+            steps {
+                echo 'Deploy the App'
+                sh 'ls -l'
+                sh 'ansible --version'
+                sh 'ansible-inventory --graph'
+                ansiblePlaybook credentialsId: 'firstkey', disableHostKeyChecking: true, installation: 'ansible', inventory: 'inventory_aws_ec2.yml', playbook: 'docker_project.yml'
+             }
+        }
+        stage('Destroy the infrastructure'){
+            steps{
+                timeout(time:5, unit:'DAYS'){
+                    input message:'Approve terminate'
+                }
+                sh """
+                docker image prune -af
+                terraform destroy --auto-approve
+                aws ecr delete-repository \
+                  --repository-name ${APP_REPO_NAME} \
+                  --region ${AWS_REGION} \
+                  --force
+                """
+            }
+        }
+    }
+    post {
+        always {
+            echo 'Deleting all local images'
+            sh 'docker image prune -af'
+        }
+        failure {
+
+            echo 'Delete the Image Repository on ECR due to the Failure'
+            sh """
+                aws ecr delete-repository \
+                  --repository-name ${APP_REPO_NAME} \
+                  --region ${AWS_REGION}\
+                  --force
+                """
+            echo 'Deleting Terraform Stack due to the Failure'
+                sh 'terraform destroy --auto-approve'
+        }
+    }
+}
+```
 
 
 Verify Kubernetes Plugin
