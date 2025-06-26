@@ -20,6 +20,13 @@ kubectl get secret argocd-initial-admin-secret -n argocd \
   -o jsonpath="{.data.password}" | base64 -d && echo
 # -d1TcgILt62Hk6Z5
 kubectl port-forward --address 0.0.0.0 svc/argocd-server -n argocd 8080:443
+#or
+kubectl edit svc -n argocd argocd-server:
+#underneath spec:ports:http
+#NodePort: 30080
+#underneath spec:ports:https
+#NodePort: 30443
+#type: NodePort
 ```
 02. Installing Argo CD CLI
 Install Argo CD CLI, use the below commands to start with the installation
